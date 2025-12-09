@@ -1,3 +1,7 @@
 {
-  "instance_id": "i-1234567890abcdef0"
+  "instance_ids": [
+    "i-1234567890abcdef0",
+    "i-0987654321fedcba0",
+    "i-abcdef1234567890"
+  ]
 }
