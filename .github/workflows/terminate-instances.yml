@@ -1,0 +1,62 @@
+name: Terminate EC2 Instances
+
+on:
+  workflow_dispatch:
+    inputs:
+      instance_ids:
+        description: 'Comma-separated list of instance IDs to terminate (e.g., i-abc123,i-def456)'
+        required: true
+        type: string
+
+jobs:
+  terminate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Invoke Lambda to terminate instances
+      run: |
+        FUNCTION_NAME="ec2-instance-terminator"
+        
+        # Convert comma-separated string to JSON array
+        IFS=',' read -ra INSTANCES <<< "${{ github.event.inputs.instance_ids }}"
+        JSON_ARRAY=$(printf '%s\n' "${INSTANCES[@]}" | jq -R . | jq -s .)
+        
+        # Create payload
+        PAYLOAD=$(jq -n --argjson ids "$JSON_ARRAY" '{instance_ids: $ids}')
+        
+        echo "Invoking Lambda with payload:"
+        echo "$PAYLOAD" | jq .
+        
+        # Invoke Lambda function
+        aws lambda invoke \
+          --function-name $FUNCTION_NAME \
+          --payload "$PAYLOAD" \
+          --cli-binary-format raw-in-base64-out \
+          response.json
+        
+        echo ""
+        echo "=== TERMINATION RESULTS ==="
+        cat response.json | jq .
+        
+        # Check if there were any successful terminations
+        SUCCESSFUL=$(cat response.json | jq -r '.body' | jq -r '.summary.successful_terminations')
+        BLOCKED=$(cat response.json | jq -r '.body' | jq -r '.summary.blocked_terminations')
+        FAILED=$(cat response.json | jq -r '.body' | jq -r '.summary.failed_terminations')
+        
+        echo ""
+        echo "📊 Summary:"
+        echo "  ✅ Successful: $SUCCESSFUL"
+        echo "  🚫 Blocked: $BLOCKED"
+        echo "  ❌ Failed: $FAILED"
+        
+        # Display detailed results
+        echo ""
+        echo "📋 Detailed Results:"
+        cat response.json | jq -r '.body' | jq .
