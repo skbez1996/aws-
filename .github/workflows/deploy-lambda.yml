@@ -1,0 +1,132 @@
+name: Deploy Lambda Function
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install boto3 -t .
+    
+    - name: Create deployment package
+      run: |
+        zip -r lambda_function.zip lambda_function.py boto3* botocore* dateutil* urllib3* six* jmespath* s3transfer*
+    
+    - name: Create or update IAM role
+      run: |
+        ROLE_NAME="LambdaEC2TerminatorRole"
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        
+        # Check if role exists
+        if ! aws iam get-role --role-name $ROLE_NAME 2>/dev/null; then
+          echo "Creating IAM role..."
+          
+          # Create trust policy
+          cat > trust-policy.json <<EOF
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }
+        EOF
+          
+          # Create role
+          aws iam create-role \
+            --role-name $ROLE_NAME \
+            --assume-role-policy-document file://trust-policy.json
+          
+          # Attach basic execution policy
+          aws iam attach-role-policy \
+            --role-name $ROLE_NAME \
+            --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          
+          # Create EC2 termination policy
+          cat > ec2-policy.json <<EOF
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "ec2:TerminateInstances",
+                "ec2:DescribeInstances"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+        EOF
+          
+          aws iam put-role-policy \
+            --role-name $ROLE_NAME \
+            --policy-name EC2TerminatorPolicy \
+            --policy-document file://ec2-policy.json
+          
+          echo "Waiting for role to propagate..."
+          sleep 10
+        fi
+    
+    - name: Deploy Lambda function
+      run: |
+        FUNCTION_NAME="ec2-instance-terminator"
+        ROLE_NAME="LambdaEC2TerminatorRole"
+        ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+        ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
+        
+        # Check if function exists
+        if aws lambda get-function --function-name $FUNCTION_NAME 2>/dev/null; then
+          echo "Updating existing function..."
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --zip-file fileb://lambda_function.zip
+          
+          aws lambda update-function-configuration \
+            --function-name $FUNCTION_NAME \
+            --runtime python3.11 \
+            --handler lambda_function.lambda_handler \
+            --timeout 30 \
+            --memory-size 128
+        else
+          echo "Creating new function..."
+          aws lambda create-function \
+            --function-name $FUNCTION_NAME \
+            --runtime python3.11 \
+            --role $ROLE_ARN \
+            --handler lambda_function.lambda_handler \
+            --zip-file fileb://lambda_function.zip \
+            --timeout 30 \
+            --memory-size 128 \
+            --description "Lambda function to terminate EC2 instances"
+        fi
+        
+        echo "Deployment complete!"
+        echo "Function ARN: arn:aws:lambda:${{ secrets.AWS_REGION }}:${ACCOUNT_ID}:function:${FUNCTION_NAME}"
