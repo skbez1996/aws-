@@ -1,0 +1,118 @@
+name: Terminate Instances from File
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'instances-to-terminate.txt'
+
+jobs:
+  terminate:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Read instance IDs from file
+      id: read_instances
+      run: |
+        # Read file, remove comments and empty lines
+        INSTANCES=$(grep -v '^#' instances-to-terminate.txt | grep -v '^[[:space:]]*$' | tr '\n' ',' | sed 's/,$//')
+        
+        if [ -z "$INSTANCES" ]; then
+          echo "No instances found in instances-to-terminate.txt"
+          echo "has_instances=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+        
+        echo "Found instances: $INSTANCES"
+        echo "instances=$INSTANCES" >> $GITHUB_OUTPUT
+        echo "has_instances=true" >> $GITHUB_OUTPUT
+    
+    - name: Configure AWS credentials
+      if: steps.read_instances.outputs.has_instances == 'true'
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Invoke Lambda to terminate instances
+      if: steps.read_instances.outputs.has_instances == 'true'
+      run: |
+        FUNCTION_NAME="ec2-instance-terminator"
+        
+        # Convert comma-separated string to JSON array
+        IFS=',' read -ra INSTANCES <<< "${{ steps.read_instances.outputs.instances }}"
+        JSON_ARRAY=$(printf '%s\n' "${INSTANCES[@]}" | jq -R . | jq -s .)
+        
+        # Create payload
+        PAYLOAD=$(jq -n --argjson ids "$JSON_ARRAY" '{instance_ids: $ids}')
+        
+        echo "🚀 Invoking Lambda with payload:"
+        echo "$PAYLOAD" | jq .
+        
+        # Invoke Lambda function
+        aws lambda invoke \
+          --function-name $FUNCTION_NAME \
+          --payload "$PAYLOAD" \
+          --cli-binary-format raw-in-base64-out \
+          response.json
+        
+        echo ""
+        echo "=== TERMINATION RESULTS ==="
+        cat response.json | jq .
+        
+        # Parse results
+        SUCCESSFUL=$(cat response.json | jq -r '.body' | jq -r '.summary.successful_terminations')
+        BLOCKED=$(cat response.json | jq -r '.body' | jq -r '.summary.blocked_terminations')
+        FAILED=$(cat response.json | jq -r '.body' | jq -r '.summary.failed_terminations')
+        
+        echo ""
+        echo "📊 Summary:"
+        echo "  ✅ Successful: $SUCCESSFUL"
+        echo "  🚫 Blocked: $BLOCKED"
+        echo "  ❌ Failed: $FAILED"
+        
+        # Display detailed results
+        echo ""
+        echo "📋 Detailed Results:"
+        cat response.json | jq -r '.body' | jq .
+        
+        # Save results to file
+        cat response.json | jq -r '.body' > termination-results.json
+    
+    - name: Upload results as artifact
+      if: steps.read_instances.outputs.has_instances == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: termination-results
+        path: |
+          response.json
+          termination-results.json
+        retention-days: 30
+    
+    - name: Clear instances file (optional)
+      if: steps.read_instances.outputs.has_instances == 'true' && success()
+      run: |
+        # Comment this out if you want to keep the file as-is
+        # Uncomment to automatically clear the file after successful termination
+        
+        # cat > instances-to-terminate.txt <<EOF
+        # # EC2 Instances to Terminate
+        # # Add one instance ID per line
+        # # Lines starting with # are ignored
+        # # File was cleared after successful termination on $(date)
+        # 
+        # EOF
+        
+        # git config user.name "github-actions[bot]"
+        # git config user.email "github-actions[bot]@users.noreply.github.com"
+        # git add instances-to-terminate.txt
+        # git commit -m "Clear instances-to-terminate.txt after successful termination" || true
+        # git push || true
+        
+        echo "ℹ️ File clearing is disabled. Edit this step to enable auto-clearing."

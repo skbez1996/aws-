@@ -1,0 +1,6 @@
+# EC2 Instances to Terminate
+# Add one instance ID per line
+# Lines starting with # are ignored
+
+i-1234567890abcdef0
+i-0987654321fedcba0

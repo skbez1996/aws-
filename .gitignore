@@ -47,3 +47,4 @@ Thumbs.db
 # AWS
 .aws/
 response.json
+termination-results.json

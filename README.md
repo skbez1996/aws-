@@ -57,6 +57,23 @@ The Lambda execution role needs the following permissions:
 }
 ```
 
+## How to Terminate Instances
+
+### Method 1: File-Based (Recommended)
+1. Edit `instances-to-terminate.txt` and add instance IDs (one per line)
+2. Commit and push the file
+3. GitHub Actions will automatically terminate those instances
+4. View results in the Actions tab or download the artifact
+
+### Method 2: Manual Workflow Input
+1. Go to GitHub Actions → "Terminate EC2 Instances" workflow
+2. Click "Run workflow"
+3. Enter comma-separated instance IDs
+4. View results in workflow logs
+
+### Method 3: Environment Variable
+Set `INSTANCE_IDS` in Lambda configuration for default instances to terminate
+
 ## Deployment
 
 1. Install dependencies:
