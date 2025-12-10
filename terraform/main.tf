@@ -9,12 +9,11 @@ terraform {
   }
   
   # Store Terraform state in S3 (optional but recommended)
-  # Uncomment after creating the state bucket manually
-  # backend "s3" {
-  #   bucket = "terraform-state-bucket-name"
-  #   key    = "aws-infra/terraform.tfstate"
-  #   region = "us-east-1"
-  # }
+  backend "s3" {
+    bucket = "engdata2025"
+    key    = "mytfstate/aws/terraform.tfstate"
+    region = "us-east-1"
+  }
 }
 
 provider "aws" {
