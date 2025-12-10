@@ -1,0 +1,75 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: 'Type "destroy" to confirm deletion of all infrastructure'
+        required: true
+        type: string
+
+env:
+  TF_VERSION: '1.6.0'
+  WORKING_DIR: './terraform'
+
+jobs:
+  terraform-destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: ${{ env.WORKING_DIR }}
+    
+    steps:
+    - name: Verify confirmation
+      run: |
+        if [ "${{ github.event.inputs.confirm_destroy }}" != "destroy" ]; then
+          echo "❌ Destroy not confirmed. You must type 'destroy' exactly."
+          exit 1
+        fi
+        echo "✅ Destroy confirmed. Proceeding..."
+    
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+    
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    
+    - name: Terraform Init
+      run: terraform init
+    
+    - name: Terraform Plan Destroy
+      run: |
+        echo "🔍 Planning destruction of infrastructure..."
+        terraform plan -destroy -out=destroy-plan
+    
+    - name: Show Destroy Plan
+      run: |
+        echo "📋 Resources to be DESTROYED:"
+        terraform show destroy-plan
+    
+    - name: Terraform Destroy
+      run: |
+        echo "⚠️  DESTROYING INFRASTRUCTURE..."
+        terraform apply -auto-approve destroy-plan
+        echo "💥 All infrastructure has been destroyed!"
+    
+    - name: Summary
+      if: always()
+      run: |
+        echo "========================================="
+        echo "Terraform Destroy Summary"
+        echo "========================================="
+        echo "Triggered by: ${{ github.actor }}"
+        echo "Status: ${{ job.status }}"
+        echo "========================================="
