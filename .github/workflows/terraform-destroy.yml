@@ -44,7 +44,10 @@ jobs:
     
     - name: Terraform Init
       working-directory: ${{ env.WORKING_DIR }}
-      run: terraform init
+      run: |
+        echo "Current directory: $(pwd)"
+        ls -la
+        terraform init
     
     - name: Terraform Plan Destroy
       working-directory: ${{ env.WORKING_DIR }}
