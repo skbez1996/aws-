@@ -17,10 +17,6 @@ jobs:
     name: Terraform Destroy
     runs-on: ubuntu-latest
     
-    defaults:
-      run:
-        working-directory: ${{ env.WORKING_DIR }}
-    
     steps:
     - name: Verify confirmation
       run: |
@@ -46,19 +42,23 @@ jobs:
         terraform_version: ${{ env.TF_VERSION }}
     
     - name: Terraform Init
+      working-directory: ${{ env.WORKING_DIR }}
       run: terraform init
     
     - name: Terraform Plan Destroy
+      working-directory: ${{ env.WORKING_DIR }}
       run: |
         echo "🔍 Planning destruction of infrastructure..."
         terraform plan -destroy -out=destroy-plan
     
     - name: Show Destroy Plan
+      working-directory: ${{ env.WORKING_DIR }}
       run: |
         echo "📋 Resources to be DESTROYED:"
         terraform show destroy-plan
     
     - name: Terraform Destroy
+      working-directory: ${{ env.WORKING_DIR }}
       run: |
         echo "⚠️  DESTROYING INFRASTRUCTURE..."
         terraform apply -auto-approve destroy-plan
