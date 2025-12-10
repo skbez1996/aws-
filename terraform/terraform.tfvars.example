@@ -1,0 +1,6 @@
+# Terraform environment variables
+aws_region         = "us-east-1"
+bucket_name        = "my-app-bucket"
+environment        = "dev"
+enable_versioning  = true
+enable_encryption  = true
